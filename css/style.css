@@ -328,3 +328,27 @@ body {
 .day-word-list { margin: 0 0 12px; padding-left: 18px; font-size: 13px; color: var(--muted); }
 .day-word-list li { margin-bottom: 4px; }
 .day-word-list strong { color: var(--text); }
+
+/* 학습 캘린더 */
+.cal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.cal-month-label { font-size: 15px; font-weight: 700; }
+.cal-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+}
+.cal-weekday { text-align: center; font-size: 11px; color: var(--muted); padding: 4px 0; }
+.cal-cell {
+  aspect-ratio: 1 / 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--card-bg);
+  color: var(--text); font-size: 11px; cursor: default; padding: 2px;
+}
+.cal-cell.empty { border: none; background: transparent; }
+.cal-daynum { font-size: 12px; font-weight: 600; }
+.cal-cell.has-entry {
+  cursor: pointer; background: rgba(59,91,253,0.12); border-color: var(--primary);
+}
+.cal-cell.has-entry .cal-count { color: var(--primary); font-weight: 600; font-size: 9px; text-align: center; line-height: 1.2; }
+.cal-cell.is-today { box-shadow: 0 0 0 2px var(--accent) inset; }
+.cal-cell:disabled { opacity: 0.5; }
