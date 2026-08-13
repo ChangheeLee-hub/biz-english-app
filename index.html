@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>비즈니스 영어 학습</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#3b5bfd" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="영어학습" />
+<link rel="apple-touch-icon" href="icons/icon-180.png" />
+<link rel="icon" href="icons/favicon-32.png" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <h1>비즈니스 영어 학습</h1>
+      <p>카테고리별 단어·표현 + 망각곡선 기반 복습</p>
+    </header>
+
+    <nav class="tab-bar">
+      <button class="tab-btn active" data-tab="dashboard">대시보드</button>
+      <button class="tab-btn" data-tab="daylearn">새단어 학습</button>
+      <button class="tab-btn" data-tab="review">복습</button>
+      <button class="tab-btn" data-tab="browse">단어장</button>
+      <button class="tab-btn" data-tab="add">추가</button>
+      <button class="tab-btn" data-tab="categories">카테고리</button>
+      <button class="tab-btn" data-tab="stats">통계</button>
+    </nav>
+
+    <main>
+      <section id="panel-dashboard" class="tab-panel active"></section>
+      <section id="panel-daylearn" class="tab-panel"></section>
+      <section id="panel-review" class="tab-panel"></section>
+      <section id="panel-browse" class="tab-panel"></section>
+      <section id="panel-add" class="tab-panel"></section>
+      <section id="panel-categories" class="tab-panel"></section>
+      <section id="panel-stats" class="tab-panel"></section>
+    </main>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
