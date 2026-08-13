@@ -29,6 +29,7 @@
       <button class="tab-btn" data-tab="add">추가</button>
       <button class="tab-btn" data-tab="categories">카테고리</button>
       <button class="tab-btn" data-tab="stats">통계</button>
+      <button class="tab-btn" data-tab="sync">동기화</button>
     </nav>
 
     <main>
@@ -39,10 +40,14 @@
       <section id="panel-add" class="tab-panel"></section>
       <section id="panel-categories" class="tab-panel"></section>
       <section id="panel-stats" class="tab-panel"></section>
+      <section id="panel-sync" class="tab-panel"></section>
     </main>
   </div>
 
   <script src="js/data.js"></script>
   <script src="js/app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script src="js/sync.js"></script>
 </body>
 </html>
