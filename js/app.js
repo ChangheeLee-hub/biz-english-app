@@ -552,9 +552,8 @@ function renderLearnCard() {
       <div class="slider-label" id="learn-slider-label">${learnIndex + 1} / ${learnQueue.length}</div>
     </div>
 
-    <div id="learn-card-host">${learnCardBodyHtml(learnQueue[learnIndex])}</div>
+    <div id="learn-card-host" class="card-viewport">${learnCardBodyHtml(learnQueue[learnIndex])}</div>
 
-    <p class="muted key-hint">좌우로 밀거나 위 바를 드래그해서 이동할 수 있어요 · 키보드 ← →</p>
     <div class="nav-spacer"></div>
 
     <div class="card-nav big fixed-bottom">
@@ -874,9 +873,11 @@ function renderReviewCard() {
       <span class="progress-text">${progress}</span>
     </div>
     ${modeSelectorHtml}
-    <div class="swipe-area" id="review-swipe-area">
-      <div class="flashcard">
-        ${cardBodyHtml}
+    <div class="card-viewport">
+      <div class="swipe-area" id="review-swipe-area">
+        <div class="flashcard">
+          ${cardBodyHtml}
+        </div>
       </div>
     </div>
 
