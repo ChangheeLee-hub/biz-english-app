@@ -51,6 +51,7 @@ function loadState() {
 
   loaded.settings = loaded.settings || { reviewMode: 'mixed' };
   loaded.studyDayLog = loaded.studyDayLog || [];
+  if (loaded.learnSession === undefined) loaded.learnSession = null;
 
   if (loaded.dataVersion !== SEED_VERSION) {
     syncSeedContent(loaded);
@@ -81,6 +82,7 @@ function createInitialState() {
     reviewLog: [], // { date: 'YYYY-MM-DD', count: n }
     studyDayLog: [], // { day: number, date: 'YYYY-MM-DD', wordIds: [] }  (day 0 = 즉시 학습된 단어)
     settings: { reviewMode: 'mixed' },
+    learnSession: null, // { day, index } — 진행 중인 "새단어 학습" 세션 위치 (중단 후 재개용)
   };
 }
 
@@ -320,7 +322,11 @@ function renderDashboard() {
     </div>
 
     <div class="action-row">
-      <button class="btn primary" id="btn-goto-daylearn">${nextStudyDayNumber()}일차 새단어 학습</button>
+      <button class="btn primary" id="btn-goto-daylearn">${
+        state.learnSession
+          ? `이어서 학습하기 (${state.learnSession.index}/${(state.studyDayLog.find(e => e.day === state.learnSession.day) || { wordIds: [] }).wordIds.length})`
+          : `${nextStudyDayNumber()}일차 새단어 학습`
+      }</button>
       <button class="btn" id="btn-start-review" ${due.length === 0 ? 'disabled' : ''}>
         복습 시작하기 (${due.length})
       </button>
@@ -338,26 +344,38 @@ function renderDashboard() {
 /* ---------------- 새단어 학습 (일차별) ---------------- */
 let learnQueue = [];
 let learnIndex = 0;
+let learnMode = 'new'; // 'new' = 오늘의 신규 학습(진행상황 저장됨) | 'revisit' = 지난 일자 다시보기
+let learnRevisitLabel = '';
+let learnViewMode = 'card'; // 'card' = 한 장씩 넘기기 | 'list' = 전체 목록 한눈에 보기
+let calendarMonthOffset = 0;
 
 function renderDayLearn() {
+  // 중단된 "새단어 학습" 세션이 있으면 처음부터가 아니라 중단 지점부터 이어서 보여줍니다.
+  if (state.learnSession) {
+    const entry = state.studyDayLog.find(e => e.day === state.learnSession.day);
+    if (entry) {
+      learnQueue = entry.wordIds.map(id => state.words.find(w => w.id === id)).filter(Boolean);
+      learnIndex = Math.min(state.learnSession.index, learnQueue.length);
+      learnMode = 'new';
+      renderLearnCard();
+      return;
+    }
+    state.learnSession = null; // 참조가 깨졌으면(단어 삭제 등) 정리하고 아래 일반 화면으로
+  }
+
   const el = document.getElementById('panel-daylearn');
   const remaining = unintroducedWords().length;
   const nextDay = nextStudyDayNumber();
   const batchPreview = Math.min(DAILY_BATCH_SIZE, remaining);
 
-  const dayRows = [...state.studyDayLog]
+  const dayChips = [...state.studyDayLog]
     .filter(e => e.wordIds.length > 0)
-    .sort((a, b) => b.day - a.day)
-    .map(entry => {
-      const words = entry.wordIds.map(id => state.words.find(w => w.id === id)).filter(Boolean);
-      const title = entry.day === 0 ? `즉시 학습 단어 · ${words.length}개` : `${entry.day}일차 · ${entry.date} · ${words.length}개`;
-      return `
-        <details class="day-entry">
-          <summary>${title}</summary>
-          <ul class="day-word-list">
-            ${words.map(w => `<li><strong>${escapeHtml(w.term)}</strong> — ${escapeHtml(w.meaningKo)}</li>`).join('')}
-          </ul>
-        </details>`;
+    .sort((a, b) => a.day - b.day)
+    .map(e => {
+      const label = e.day === 0 ? '직접 추가' : `Day ${e.day}`;
+      return `<button class="btn day-chip" data-day="${e.day}" data-date="${e.date}">
+        ${label}<small>${e.wordIds.length}개</small>
+      </button>`;
     }).join('');
 
   el.innerHTML = `
@@ -378,12 +396,87 @@ function renderDayLearn() {
     </div>
     ${remaining === 0 ? '<p class="muted">모든 단어를 학습했어요! 새 단어를 추가하면 계속할 수 있습니다.</p>' : ''}
 
-    <div class="section-title">학습 기록 (일자별 조회)</div>
-    ${dayRows ? `<div class="day-history">${dayRows}</div>` : '<p class="muted">아직 학습 기록이 없습니다.</p>'}
+    <div class="section-title">지난 학습 다시보기 (퀴즈 없이 카드로만 훑어봅니다)</div>
+    ${dayChips ? `<div class="day-chip-row">${dayChips}</div>` : '<p class="muted">아직 학습 기록이 없습니다.</p>'}
+
+    <div class="section-title">학습 캘린더</div>
+    <div id="calendar-container"></div>
   `;
 
   const startBtn = document.getElementById('btn-start-day');
   if (startBtn) startBtn.addEventListener('click', startStudyDay);
+
+  el.querySelectorAll('.day-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const day = Number(btn.dataset.day);
+      const entry = state.studyDayLog.find(e => e.day === day && e.date === btn.dataset.date);
+      if (!entry) return;
+      const words = entry.wordIds.map(id => state.words.find(w => w.id === id)).filter(Boolean);
+      startRevisitSession(words, day === 0 ? '직접 추가한 단어' : `Day ${day}`);
+    });
+  });
+
+  calendarMonthOffset = 0;
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const container = document.getElementById('calendar-container');
+  if (!container) return;
+
+  const base = new Date();
+  const viewDate = new Date(base.getFullYear(), base.getMonth() + calendarMonthOffset, 1);
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstDayOfWeek = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const entriesByDate = {};
+  state.studyDayLog.forEach(e => {
+    if (!e.wordIds || !e.wordIds.length) return;
+    (entriesByDate[e.date] = entriesByDate[e.date] || []).push(e);
+  });
+
+  const todayStr = todayISO();
+  const weekLabels = ['일', '월', '화', '수', '목', '금', '토'];
+  let cells = weekLabels.map(w => `<div class="cal-weekday">${w}</div>`).join('');
+  for (let i = 0; i < firstDayOfWeek; i++) cells += `<div class="cal-cell empty"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const dayEntries = entriesByDate[dateStr];
+    const totalWords = dayEntries ? dayEntries.reduce((sum, e) => sum + e.wordIds.length, 0) : 0;
+    const dayNumbers = dayEntries ? dayEntries.filter(e => e.day > 0).map(e => e.day) : [];
+    const isToday = dateStr === todayStr;
+    cells += `
+      <button class="cal-cell ${dayEntries ? 'has-entry' : ''} ${isToday ? 'is-today' : ''}"
+        ${dayEntries ? `data-date="${dateStr}"` : 'disabled'}>
+        <span class="cal-daynum">${d}</span>
+        ${dayEntries ? `<span class="cal-count">${totalWords}개${dayNumbers.length ? ` · ${dayNumbers.join(',')}일차` : ''}</span>` : ''}
+      </button>`;
+  }
+
+  container.innerHTML = `
+    <div class="cal-header">
+      <button class="btn nav-btn" id="cal-prev" title="이전 달">◀</button>
+      <span class="cal-month-label">${year}년 ${month + 1}월</span>
+      <button class="btn nav-btn" id="cal-next" title="다음 달">▶</button>
+    </div>
+    <div class="cal-grid">${cells}</div>
+  `;
+
+  document.getElementById('cal-prev').addEventListener('click', () => { calendarMonthOffset--; renderCalendar(); });
+  document.getElementById('cal-next').addEventListener('click', () => { calendarMonthOffset++; renderCalendar(); });
+
+  container.querySelectorAll('.cal-cell.has-entry').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const dateStr = btn.dataset.date;
+      const words = entriesByDate[dateStr]
+        .flatMap(e => e.wordIds)
+        .map(id => state.words.find(w => w.id === id))
+        .filter(Boolean);
+      startRevisitSession(words, dateStr);
+    });
+  });
 }
 
 function startStudyDay() {
@@ -397,29 +490,57 @@ function startStudyDay() {
     w.srs.dueDate = addDaysISO(1); // 오늘 처음 학습했으니 첫 복습 체크포인트는 내일로
   });
   state.studyDayLog.push({ day, date: today, wordIds: batch.map(w => w.id) });
+  // 배치를 기록하는 시점에 바로 진행 위치를 저장해둡니다 — 앱을 도중에 꺼도
+  // 다음에 열었을 때 처음(1/20)이 아니라 중단했던 카드부터 이어서 볼 수 있습니다.
+  state.learnSession = { day, index: 0 };
   saveState();
 
   learnQueue = batch;
   learnIndex = 0;
+  learnMode = 'new';
   renderLearnCard();
+}
+
+function startRevisitSession(words, dateLabel) {
+  learnQueue = words;
+  learnIndex = 0;
+  learnMode = 'revisit';
+  learnRevisitLabel = dateLabel;
+  renderLearnCard();
+}
+
+function learnSessionTitle() {
+  return learnMode === 'new' ? '오늘의 새 단어' : learnRevisitLabel;
 }
 
 function renderLearnCard() {
   const el = document.getElementById('panel-daylearn');
+  if (learnViewMode === 'list') { renderLearnList(); return; }
 
   if (learnIndex >= learnQueue.length) {
-    el.innerHTML = `<div class="empty-state">
-      <p class="celebrate">오늘의 새 단어 학습을 마쳤어요! 🎉</p>
-      <p class="muted">이 단어들은 내일부터 '복습' 탭에 자동으로 등장합니다.</p>
-      <button class="btn primary" id="btn-learn-done">학습 기록으로</button>
-      <button class="btn" id="btn-learn-review-now">지금 바로 복습하기</button>
-    </div>`;
-    document.getElementById('btn-learn-done').addEventListener('click', renderDayLearn);
-    document.getElementById('btn-learn-review-now').addEventListener('click', () => switchTab('review'));
+    if (learnMode === 'new') {
+      state.learnSession = null;
+      saveState();
+      el.innerHTML = `<div class="empty-state">
+        <p class="celebrate">오늘의 새 단어 학습을 마쳤어요! 🎉</p>
+        <p class="muted">이 단어들은 내일부터 '복습' 탭에 자동으로 등장합니다.</p>
+        <button class="btn primary" id="btn-learn-done">학습 기록으로</button>
+        <button class="btn" id="btn-learn-review-now">지금 바로 복습하기</button>
+      </div>`;
+      document.getElementById('btn-learn-done').addEventListener('click', renderDayLearn);
+      document.getElementById('btn-learn-review-now').addEventListener('click', () => switchTab('review'));
+    } else {
+      el.innerHTML = `<div class="empty-state">
+        <p class="celebrate">${escapeHtml(learnRevisitLabel)} 단어를 다시 훑어봤어요!</p>
+        <button class="btn primary" id="btn-revisit-done">학습 기록으로</button>
+      </div>`;
+      document.getElementById('btn-revisit-done').addEventListener('click', renderDayLearn);
+    }
     return;
   }
 
   const word = learnQueue[learnIndex];
+
   el.innerHTML = `
     <div class="progress-bar"><div class="progress-fill" style="width:${(learnIndex / learnQueue.length) * 100}%"></div></div>
     <div class="review-meta">
@@ -427,28 +548,134 @@ function renderLearnCard() {
       <span class="type-badge">${word.type === 'phrase' ? '관용구/표현' : '단어'}</span>
       <span class="progress-text">${learnIndex + 1} / ${learnQueue.length}</span>
     </div>
-    <div class="card-nav">
-      <button class="btn nav-btn" id="btn-learn-prev" ${learnIndex === 0 ? 'disabled' : ''} title="이전 카드">◀</button>
-      <span class="muted">새 단어를 하나씩 익혀보세요 (← → 로도 이동 가능)</span>
-      <button class="btn nav-btn" id="btn-learn-next" title="다음 카드">▶</button>
+    <div class="learn-toolbar">
+      <span class="muted">${escapeHtml(learnSessionTitle())}</span>
+      <button class="btn" id="btn-learn-listview">전체 목록으로 보기</button>
     </div>
-    <div class="flashcard">
-      <div class="term-row">
-        <div class="term">${escapeHtml(word.term)}</div>
-        <button class="speak-btn" id="btn-learn-speak" title="발음 듣기">🔊</button>
+
+    <div class="swipe-area" id="learn-swipe-area">
+      <div class="flashcard">
+        <div class="term-row">
+          <div class="term">${escapeHtml(word.term)}</div>
+          <button class="speak-btn" id="btn-learn-speak" title="발음 듣기">🔊</button>
+        </div>
+        ${word.ipa ? `<div class="ipa">${escapeHtml(word.ipa)}</div>` : ''}
+        <div class="reveal">
+          <div class="meaning">${escapeHtml(word.meaningKo)} <span class="pos">${escapeHtml(word.pos || '')}</span></div>
+          ${renderExamples(word)}
+          ${renderTip(word)}
+          ${renderWordRelations(word)}
+        </div>
       </div>
-      ${word.ipa ? `<div class="ipa">${escapeHtml(word.ipa)}</div>` : ''}
-      <div class="reveal">
-        <div class="meaning">${escapeHtml(word.meaningKo)} <span class="pos">${escapeHtml(word.pos || '')}</span></div>
-        ${renderExamples(word)}
-        ${renderTip(word)}
-        ${renderWordRelations(word)}
-      </div>
+    </div>
+
+    <div class="card-nav big">
+      <button class="btn nav-btn" id="btn-learn-prev" ${learnIndex === 0 ? 'disabled' : ''} title="이전 카드">◀ 이전</button>
+      <button class="btn nav-btn primary" id="btn-learn-next" title="다음 카드">다음 ▶</button>
+    </div>
+    <p class="muted key-hint">좌우로 밀어서 넘길 수도 있어요 · 키보드 ← →</p>
+  `;
+
+  document.getElementById('btn-learn-speak').addEventListener('click', () => speak(word.term));
+  document.getElementById('btn-learn-prev').addEventListener('click', () => moveLearnCard(-1));
+  document.getElementById('btn-learn-next').addEventListener('click', () => moveLearnCard(1));
+  document.getElementById('btn-learn-listview').addEventListener('click', () => {
+    learnViewMode = 'list';
+    renderLearnList();
+  });
+  attachSwipe(document.getElementById('learn-swipe-area'), moveLearnCard);
+}
+
+// 20개를 한 장씩 넘기지 않고 한 화면에서 스크롤로 훑어보는 목록 모드
+function renderLearnList() {
+  const el = document.getElementById('panel-daylearn');
+  el.innerHTML = `
+    <div class="learn-toolbar">
+      <span class="muted">${escapeHtml(learnSessionTitle())} · ${learnQueue.length}개</span>
+      <button class="btn" id="btn-learn-cardview">카드로 보기</button>
+    </div>
+    <div class="learn-list">
+      ${learnQueue.map((word, i) => `
+        <div class="learn-list-item">
+          <div class="lli-head">
+            <span class="lli-index">${i + 1}</span>
+            <span class="term-sm">${escapeHtml(word.term)}</span>
+            ${word.ipa ? `<span class="ipa lli-ipa">${escapeHtml(word.ipa)}</span>` : ''}
+            <button class="icon-btn" data-speak-index="${i}" title="발음">🔊</button>
+          </div>
+          <div class="meaning lli-meaning">${escapeHtml(word.meaningKo)} <span class="pos">${escapeHtml(word.pos || '')}</span></div>
+          ${renderExamples(word)}
+          ${renderTip(word)}
+          ${renderWordRelations(word)}
+        </div>
+      `).join('')}
+    </div>
+    <div class="action-row">
+      ${learnMode === 'new'
+        ? '<button class="btn primary" id="btn-list-complete">학습 완료</button>'
+        : '<button class="btn primary" id="btn-list-back">학습 기록으로</button>'}
     </div>
   `;
-  document.getElementById('btn-learn-speak').addEventListener('click', () => speak(word.term));
-  document.getElementById('btn-learn-prev').addEventListener('click', () => { learnIndex--; renderLearnCard(); });
-  document.getElementById('btn-learn-next').addEventListener('click', () => { learnIndex++; renderLearnCard(); });
+
+  el.querySelectorAll('[data-speak-index]').forEach(btn => {
+    btn.addEventListener('click', () => speak(learnQueue[Number(btn.dataset.speakIndex)].term));
+  });
+
+  const completeBtn = document.getElementById('btn-list-complete');
+  if (completeBtn) completeBtn.addEventListener('click', () => {
+    learnIndex = learnQueue.length;
+    learnViewMode = 'card';
+    renderLearnCard();
+  });
+  const backBtn = document.getElementById('btn-list-back');
+  if (backBtn) backBtn.addEventListener('click', () => {
+    learnViewMode = 'card';
+    renderDayLearn();
+  });
+
+  const cardBtn = document.getElementById('btn-learn-cardview');
+  if (cardBtn) cardBtn.addEventListener('click', () => {
+    learnViewMode = 'card';
+    renderLearnCard();
+  });
+}
+
+function moveLearnCard(delta) {
+  const next = learnIndex + delta;
+  if (next < 0) return;
+  learnIndex = Math.min(next, learnQueue.length);
+  onLearnIndexChanged();
+  renderLearnCard();
+}
+
+function onLearnIndexChanged() {
+  if (learnMode === 'new' && state.learnSession) {
+    state.learnSession.index = learnIndex;
+    saveState();
+  }
+}
+
+// 좌우 스와이프로 카드를 넘깁니다. 세로 스크롤과 충돌하지 않도록
+// 가로 이동량이 세로보다 확실히 클 때만 넘김으로 처리합니다.
+function attachSwipe(el, onMove) {
+  if (!el) return;
+  let startX = 0, startY = 0, tracking = false;
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) { tracking = false; return; }
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+  }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (!tracking) return;
+    tracking = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      onMove(dx < 0 ? 1 : -1);
+    }
+  }, { passive: true });
 }
 
 /* ---------------- 복습 (플래시카드: 인식/회상 모드) ---------------- */
@@ -587,14 +814,15 @@ function renderReviewCard() {
       <span class="progress-text">${progress}</span>
     </div>
     ${modeSelectorHtml}
-    <div class="card-nav">
-      <button class="btn nav-btn" id="btn-prev-card" ${reviewIndex === 0 ? 'disabled' : ''} title="이전 카드">◀</button>
-      <span class="muted">카드를 넘기며 훑어보거나, 아래에서 기억 정도를 평가하세요</span>
-      <button class="btn nav-btn" id="btn-next-card" title="다음 카드 (평가 없이 건너뛰기)">▶</button>
+    <div class="swipe-area" id="review-swipe-area">
+      <div class="flashcard">
+        ${cardBodyHtml}
+      </div>
     </div>
 
-    <div class="flashcard">
-      ${cardBodyHtml}
+    <div class="card-nav big">
+      <button class="btn nav-btn" id="btn-prev-card" ${reviewIndex === 0 ? 'disabled' : ''} title="이전 카드">◀ 이전</button>
+      <button class="btn nav-btn" id="btn-next-card" title="다음 카드 (평가 없이 건너뛰기)">건너뛰기 ▶</button>
     </div>
 
     ${showRating ? `
@@ -620,6 +848,10 @@ function renderReviewCard() {
 
   document.getElementById('btn-prev-card').addEventListener('click', () => navigateCard(-1));
   document.getElementById('btn-next-card').addEventListener('click', () => navigateCard(1));
+  // 회상 모드에서 답을 입력하는 중에는 스와이프로 카드가 넘어가지 않도록 합니다.
+  if (!(currentDirection === 'recall' && !recallChecked)) {
+    attachSwipe(document.getElementById('review-swipe-area'), navigateCard);
+  }
 
   if (currentDirection === 'recall' && !recallChecked) {
     const form = document.getElementById('recall-form');
@@ -670,6 +902,13 @@ function rateCurrentCard(rating) {
 
 document.addEventListener('keydown', e => {
   if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+  const learnPanel = document.getElementById('panel-daylearn');
+  if (learnPanel && learnPanel.classList.contains('active') && learnViewMode === 'card' && learnQueue.length) {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); moveLearnCard(-1); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); moveLearnCard(1); return; }
+  }
+
   const reviewPanel = document.getElementById('panel-review');
   if (!reviewPanel || !reviewPanel.classList.contains('active')) return;
   if (reviewIndex >= reviewQueue.length || reviewQueue.length === 0) return;
@@ -846,7 +1085,7 @@ function renderAddForm() {
     };
     state.words.push(newWord);
 
-    let day0 = state.studyDayLog.find(e => e.day === 0);
+    let day0 = state.studyDayLog.find(e => e.day === 0 && e.date === today);
     if (!day0) { day0 = { day: 0, date: today, wordIds: [] }; state.studyDayLog.push(day0); }
     day0.wordIds.push(newWord.id);
 
