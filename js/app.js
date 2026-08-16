@@ -539,20 +539,59 @@ function renderLearnCard() {
     return;
   }
 
-  const word = learnQueue[learnIndex];
-
   el.innerHTML = `
-    <div class="progress-bar"><div class="progress-fill" style="width:${(learnIndex / learnQueue.length) * 100}%"></div></div>
-    <div class="review-meta">
-      <span class="cat-badge">${escapeHtml(categoryLabel(word.category))}</span>
-      <span class="type-badge">${word.type === 'phrase' ? '관용구/표현' : '단어'}</span>
-      <span class="progress-text">${learnIndex + 1} / ${learnQueue.length}</span>
-    </div>
     <div class="learn-toolbar">
       <span class="muted">${escapeHtml(learnSessionTitle())}</span>
       <button class="btn" id="btn-learn-listview">전체 목록으로 보기</button>
     </div>
 
+    <div class="progress-slider-wrap">
+      <input type="range" class="progress-slider" id="learn-slider"
+             min="1" max="${learnQueue.length}" value="${learnIndex + 1}"
+             aria-label="학습 진도" />
+      <div class="slider-label" id="learn-slider-label">${learnIndex + 1} / ${learnQueue.length}</div>
+    </div>
+
+    <div id="learn-card-host">${learnCardBodyHtml(learnQueue[learnIndex])}</div>
+
+    <p class="muted key-hint">좌우로 밀거나 위 바를 드래그해서 이동할 수 있어요 · 키보드 ← →</p>
+    <div class="nav-spacer"></div>
+
+    <div class="card-nav big fixed-bottom">
+      <button class="btn nav-btn" id="btn-learn-prev" ${learnIndex === 0 ? 'disabled' : ''} title="이전 카드">◀ 이전</button>
+      <button class="btn nav-btn primary" id="btn-learn-next" title="다음 카드">다음 ▶</button>
+    </div>
+  `;
+
+  document.getElementById('btn-learn-prev').addEventListener('click', () => moveLearnCard(-1));
+  document.getElementById('btn-learn-next').addEventListener('click', () => moveLearnCard(1));
+  document.getElementById('btn-learn-listview').addEventListener('click', () => {
+    learnViewMode = 'list';
+    renderLearnList();
+  });
+
+  const slider = document.getElementById('learn-slider');
+  paintSlider(slider);
+  // 드래그 중(input)에는 화면만 갱신하고, 손을 뗄 때(change) 진행 위치를 저장합니다.
+  slider.addEventListener('input', () => {
+    learnIndex = Number(slider.value) - 1;
+    updateLearnCardBody();
+  });
+  slider.addEventListener('change', () => {
+    learnIndex = Number(slider.value) - 1;
+    onLearnIndexChanged();
+    updateLearnCardBody();
+  });
+
+  bindLearnCardBody();
+}
+
+function learnCardBodyHtml(word) {
+  return `
+    <div class="review-meta">
+      <span class="cat-badge">${escapeHtml(categoryLabel(word.category))}</span>
+      <span class="type-badge">${word.type === 'phrase' ? '관용구/표현' : '단어'}</span>
+    </div>
     <div class="swipe-area" id="learn-swipe-area">
       <div class="flashcard">
         <div class="term-row">
@@ -567,23 +606,42 @@ function renderLearnCard() {
           ${renderWordRelations(word)}
         </div>
       </div>
-    </div>
+    </div>`;
+}
 
-    <div class="card-nav big">
-      <button class="btn nav-btn" id="btn-learn-prev" ${learnIndex === 0 ? 'disabled' : ''} title="이전 카드">◀ 이전</button>
-      <button class="btn nav-btn primary" id="btn-learn-next" title="다음 카드">다음 ▶</button>
-    </div>
-    <p class="muted key-hint">좌우로 밀어서 넘길 수도 있어요 · 키보드 ← →</p>
-  `;
-
-  document.getElementById('btn-learn-speak').addEventListener('click', () => speak(word.term));
-  document.getElementById('btn-learn-prev').addEventListener('click', () => moveLearnCard(-1));
-  document.getElementById('btn-learn-next').addEventListener('click', () => moveLearnCard(1));
-  document.getElementById('btn-learn-listview').addEventListener('click', () => {
-    learnViewMode = 'list';
-    renderLearnList();
-  });
+function bindLearnCardBody() {
+  const word = learnQueue[learnIndex];
+  const speakBtn = document.getElementById('btn-learn-speak');
+  if (speakBtn) speakBtn.addEventListener('click', () => speak(word.term));
   attachSwipe(document.getElementById('learn-swipe-area'), moveLearnCard);
+}
+
+// 슬라이더 자체는 그대로 두고 카드 내용만 교체합니다 (드래그 도중에도 끊기지 않도록).
+function updateLearnCardBody() {
+  const host = document.getElementById('learn-card-host');
+  if (!host) return;
+  host.innerHTML = learnCardBodyHtml(learnQueue[learnIndex]);
+  bindLearnCardBody();
+
+  const slider = document.getElementById('learn-slider');
+  if (slider) {
+    if (Number(slider.value) !== learnIndex + 1) slider.value = learnIndex + 1;
+    paintSlider(slider);
+  }
+  const label = document.getElementById('learn-slider-label');
+  if (label) label.textContent = `${learnIndex + 1} / ${learnQueue.length}`;
+
+  const prevBtn = document.getElementById('btn-learn-prev');
+  if (prevBtn) prevBtn.disabled = learnIndex === 0;
+}
+
+// 채워진 구간을 색으로 표시 (브라우저별 range 스타일 차이를 피하기 위해 배경 그라디언트 사용)
+function paintSlider(slider) {
+  if (!slider) return;
+  const min = Number(slider.min), max = Number(slider.max), val = Number(slider.value);
+  const pct = max > min ? ((val - min) / (max - min)) * 100 : 100;
+  slider.style.background =
+    `linear-gradient(to right, var(--primary) 0%, var(--primary) ${pct}%, var(--border) ${pct}%, var(--border) 100%)`;
 }
 
 // 20개를 한 장씩 넘기지 않고 한 화면에서 스크롤로 훑어보는 목록 모드
@@ -645,7 +703,9 @@ function moveLearnCard(delta) {
   if (next < 0) return;
   learnIndex = Math.min(next, learnQueue.length);
   onLearnIndexChanged();
-  renderLearnCard();
+  // 마지막 카드를 넘겨 완료 화면으로 갈 때만 전체를 다시 그립니다.
+  if (learnIndex >= learnQueue.length) renderLearnCard();
+  else updateLearnCardBody();
 }
 
 function onLearnIndexChanged() {
@@ -820,11 +880,6 @@ function renderReviewCard() {
       </div>
     </div>
 
-    <div class="card-nav big">
-      <button class="btn nav-btn" id="btn-prev-card" ${reviewIndex === 0 ? 'disabled' : ''} title="이전 카드">◀ 이전</button>
-      <button class="btn nav-btn" id="btn-next-card" title="다음 카드 (평가 없이 건너뛰기)">건너뛰기 ▶</button>
-    </div>
-
     ${showRating ? `
       <div class="rating-row">
         <button class="btn rate again" data-rating="again">다시<br><small>1일 후</small></button>
@@ -834,6 +889,12 @@ function renderReviewCard() {
       </div>
       <p class="muted key-hint">키보드: ← → 카드 이동 · 1~4 평가</p>
     ` : `<p class="muted key-hint">키보드: ← → 카드 이동${currentDirection === 'recognition' ? ' · Space/Enter 뜻 보기' : ''}</p>`}
+
+    <div class="nav-spacer"></div>
+    <div class="card-nav big fixed-bottom">
+      <button class="btn nav-btn" id="btn-prev-card" ${reviewIndex === 0 ? 'disabled' : ''} title="이전 카드">◀ 이전</button>
+      <button class="btn nav-btn" id="btn-next-card" title="다음 카드 (평가 없이 건너뛰기)">건너뛰기 ▶</button>
+    </div>
   `;
 
   document.getElementById('review-mode-select').addEventListener('change', e => {
