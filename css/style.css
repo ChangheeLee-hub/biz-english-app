@@ -158,13 +158,53 @@ button, .btn { touch-action: manipulation; }
 
 /* Review */
 .progress-bar {
-  height: 5px;
+  height: 12px;
   background: var(--border);
-  border-radius: 4px;
+  border-radius: 999px;
   overflow: hidden;
   margin-bottom: 12px;
 }
-.progress-fill { height: 100%; background: var(--primary); transition: width .2s; }
+.progress-fill { height: 100%; background: var(--primary); transition: width .2s; border-radius: 999px; }
+
+/* 드래그해서 원하는 단어로 바로 이동하는 두꺼운 진도 슬라이더 */
+.progress-slider-wrap { margin-bottom: 14px; }
+.progress-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+  /* 슬라이더를 가로로 끌 때 페이지가 함께 스크롤되지 않도록 */
+  touch-action: none;
+}
+.progress-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 4px solid var(--card-bg);
+  box-shadow: 0 1px 5px rgba(0,0,0,0.35);
+  cursor: grab;
+}
+.progress-slider::-webkit-slider-thumb:active { cursor: grabbing; }
+.progress-slider::-moz-range-thumb {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 4px solid var(--card-bg);
+  box-shadow: 0 1px 5px rgba(0,0,0,0.35);
+  cursor: grab;
+}
+.progress-slider::-moz-range-track { background: transparent; }
+.slider-label {
+  text-align: center; margin-top: 6px;
+  font-size: 13px; font-weight: 700; color: var(--muted);
+}
 .review-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 12px; color: var(--muted); }
 .card-nav {
   display: flex;
@@ -189,6 +229,21 @@ button, .btn { touch-action: manipulation; }
   background: var(--primary); border-color: var(--primary); color: #fff;
 }
 .swipe-area { touch-action: pan-y; }
+
+/* 카드 길이와 무관하게 항상 화면 하단 같은 자리에 고정되는 넘기기 버튼 */
+.card-nav.fixed-bottom {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 50;
+  margin: 0 auto;
+  max-width: 720px;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  padding: 10px calc(16px + env(safe-area-inset-right))
+           calc(10px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+}
+/* 고정 버튼에 본문 마지막 부분이 가려지지 않도록 확보하는 여백 */
+.nav-spacer { height: 92px; }
 .type-badge {
   background: rgba(16,185,129,0.12);
   color: var(--accent);
