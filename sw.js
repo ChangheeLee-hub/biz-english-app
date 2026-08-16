@@ -1,10 +1,12 @@
-const CACHE_NAME = 'biz-english-v1';
+const CACHE_NAME = 'biz-english-v2';
 const PRECACHE_URLS = [
   './',
   './index.html',
   './css/style.css',
   './js/data.js',
+  './js/data-extra.js',
   './js/app.js',
+  './js/sync.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',

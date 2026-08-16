@@ -55,6 +55,7 @@ function syncPayloadFromState() {
     studyDayLog: state.studyDayLog,
     settings: state.settings,
     learnSession: state.learnSession || null,
+    ratingStats: state.ratingStats || { again: 0, hard: 0, good: 0, easy: 0 },
     updatedAt: state.updatedAt || new Date().toISOString(),
   };
 }
@@ -81,6 +82,7 @@ function applyCloudData(data) {
   state.studyDayLog = data.studyDayLog || state.studyDayLog;
   state.settings = data.settings || state.settings;
   state.learnSession = data.learnSession !== undefined ? data.learnSession : state.learnSession;
+  state.ratingStats = data.ratingStats || state.ratingStats;
   syncSeedContent(state); // 이 기기의 최신 SEED_WORDS 기준으로 콘텐츠/카테고리 정합성 재보정
   state.dataVersion = SEED_VERSION;
   state.updatedAt = data.updatedAt || new Date().toISOString();

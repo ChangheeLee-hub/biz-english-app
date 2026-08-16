@@ -1,7 +1,7 @@
 // core: true인 카테고리는 카테고리 탭에서 삭제할 수 없습니다 (실수로 학습 데이터를 잃지 않도록 보호).
 // 이후 카테고리 탭에서 사용자가 새로 추가하는 카테고리는 기본적으로 core: false (삭제 가능)로 생성됩니다.
 const DEFAULT_CATEGORIES = [
-  { key: 'realestate', label: '부동산', core: true },
+  { key: 'realestate', label: '부동산·금융', core: true },
   { key: 'daily',      label: '일상영어', core: true },
   { key: 'business',   label: '비즈니스영어', core: true },
   { key: 'advanced',   label: '심화영어(고급 어휘)', core: true },
@@ -12,7 +12,7 @@ const DEFAULT_CATEGORIES = [
 // 시드 콘텐츠 버전. 올릴 때마다 app.js의 syncSeedContent가 실행되어, 기존에 저장된 학습 상태(SRS 주기,
 // 학습일차 등)는 보존한 채로 아래 SEED_WORDS 내용과 diff하여 새 단어 추가 / 삭제된 단어 제거 /
 // 기존 단어의 뜻·예문·팁·유의어 등 콘텐츠만 최신화합니다.
-const SEED_VERSION = 4;
+const SEED_VERSION = 5;
 
 // type: 'word' | 'phrase' (관용구/표현)
 // synonyms/antonyms/collocations는 선택 항목이며, 자연스러운 경우에만 채웠습니다.

@@ -266,6 +266,12 @@ button, .btn { touch-action: manipulation; }
   font-weight: 600;
 }
 .progress-text { margin-left: auto; }
+.diff-badge {
+  padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700;
+}
+.diff-badge.d1 { background: rgba(16,185,129,0.14); color: var(--accent); }
+.diff-badge.d2 { background: rgba(245,158,11,0.14); color: var(--warn); }
+.diff-badge.d3 { background: rgba(239,68,68,0.14); color: var(--danger); }
 
 .flashcard {
   background: var(--card-bg);

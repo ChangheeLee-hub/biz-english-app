@@ -52,6 +52,7 @@ function loadState() {
   loaded.settings = loaded.settings || { reviewMode: 'mixed' };
   loaded.studyDayLog = loaded.studyDayLog || [];
   if (loaded.learnSession === undefined) loaded.learnSession = null;
+  loaded.ratingStats = loaded.ratingStats || { again: 0, hard: 0, good: 0, easy: 0 };
 
   if (loaded.dataVersion !== SEED_VERSION) {
     syncSeedContent(loaded);
@@ -67,6 +68,7 @@ function makeSeedWord(w) {
     synonyms: w.synonyms || [],
     antonyms: w.antonyms || [],
     collocations: w.collocations || [],
+    difficulty: w.difficulty || 2, // 1 기초 / 2 중급 / 3 고급 (미지정이면 중급으로 간주)
     isSeed: true,
     studyDay: null,
     firstStudiedDate: null,
@@ -83,6 +85,7 @@ function createInitialState() {
     studyDayLog: [], // { day: number, date: 'YYYY-MM-DD', wordIds: [] }  (day 0 = 즉시 학습된 단어)
     settings: { reviewMode: 'mixed' },
     learnSession: null, // { day, index } — 진행 중인 "새단어 학습" 세션 위치 (중단 후 재개용)
+    ratingStats: { again: 0, hard: 0, good: 0, easy: 0 }, // 체감 난이도 반영용 누적 평가
   };
 }
 
@@ -104,7 +107,7 @@ function syncSeedContent(loaded) {
 
   const seedMap = new Map(SEED_WORDS.map(w => [w.category + '::' + w.term, w]));
   const matchedKeys = new Set();
-  const CONTENT_FIELDS = ['ipa', 'pos', 'type', 'meaningKo', 'examples', 'tip', 'synonyms', 'antonyms', 'collocations'];
+  const CONTENT_FIELDS = ['ipa', 'pos', 'type', 'meaningKo', 'examples', 'tip', 'synonyms', 'antonyms', 'collocations', 'difficulty'];
 
   loaded.words = loaded.words.filter(w => {
     if (!w.isSeed) return true;
@@ -127,6 +130,7 @@ function syncSeedContent(loaded) {
     w.synonyms = w.synonyms || [];
     w.antonyms = w.antonyms || [];
     w.collocations = w.collocations || [];
+    w.difficulty = w.difficulty || 2;
     if ('studyDay' in w) return;
     if (!w.isSeed) {
       w.studyDay = 0; // 사용자가 직접 추가한 단어는 즉시 학습 대상
@@ -175,6 +179,10 @@ function scheduleReview(word, rating) {
   word.srs.dueDate = addDaysISO(days);
   word.srs.reps += 1;
   word.srs.lastReviewed = todayISO();
+
+  // 난이도 체감 기록: 새 단어 배치를 구성할 때 참고합니다.
+  state.ratingStats = state.ratingStats || { again: 0, hard: 0, good: 0, easy: 0 };
+  state.ratingStats[rating] = (state.ratingStats[rating] || 0) + 1;
 }
 
 function dueWords() {
@@ -191,28 +199,75 @@ function nextStudyDayNumber() {
   return days.length ? Math.max(...days) + 1 : 1;
 }
 
-// 아직 학습하지 않은 단어들을 카테고리별로 라운드로빈 방식으로 섞어, 하루 배치가
-// 한 카테고리에 몰리지 않고 다양하게 구성되도록 합니다.
+// 지금까지 복습에서 누른 평가를 바탕으로 "체감 난이도"를 0~1로 계산합니다.
+// 1에 가까울수록 어려워하고 있다는 뜻입니다. 평가 이력이 적으면 중립값(0.5)을 씁니다.
+function struggleScore() {
+  const s = state.ratingStats;
+  if (!s) return 0.5;
+  const total = (s.again || 0) + (s.hard || 0) + (s.good || 0) + (s.easy || 0);
+  if (total < 20) return 0.5; // 표본이 적을 때는 판단을 보류
+  return ((s.again || 0) * 1 + (s.hard || 0) * 0.6 + (s.good || 0) * 0.25) / total;
+}
+
+// 체감 난이도에 따라 새 배치의 난이도 구성(기초:중급:고급)을 정합니다.
+function targetDifficultyMix() {
+  const score = struggleScore();
+  if (score > 0.62) return { 1: 0.45, 2: 0.40, 3: 0.15 }; // 어려워하는 중 → 쉬운 단어를 더
+  if (score < 0.32) return { 1: 0.15, 2: 0.40, 3: 0.45 }; // 잘 따라오는 중 → 고급 비중을 늘림
+  return { 1: 0.30, 2: 0.42, 3: 0.28 };                   // 기본 균형
+}
+
+// 아직 학습하지 않은 단어를 카테고리별로 골고루(라운드로빈) 뽑되,
+// 위에서 정한 난이도 비율에 맞게 섞어서 하루치 배치를 구성합니다.
 function pickNextBatch(size) {
   const pool = unintroducedWords();
-  const byCat = {};
-  pool.forEach(w => { (byCat[w.category] = byCat[w.category] || []).push(w); });
-  const cats = Object.keys(byCat);
+  if (!pool.length) return [];
+
+  const mix = targetDifficultyMix();
+  const quota = { 1: Math.round(size * mix[1]), 2: Math.round(size * mix[2]) };
+  quota[3] = size - quota[1] - quota[2];
+
+  // [난이도][카테고리] 형태로 분류하고, 카테고리 순환으로 편중을 방지합니다.
+  const buckets = { 1: {}, 2: {}, 3: {} };
+  pool.forEach(w => {
+    const d = w.difficulty || 2;
+    (buckets[d][w.category] = buckets[d][w.category] || []).push(w);
+  });
+
   const batch = [];
-  let i = 0;
-  while (batch.length < size) {
-    let addedAny = false;
-    for (const c of cats) {
-      if (byCat[c].length > i) {
-        batch.push(byCat[c][i]);
-        addedAny = true;
-        if (batch.length >= size) break;
+  const taken = new Set();
+
+  function drawFrom(level, count) {
+    const byCat = buckets[level];
+    const cats = Object.keys(byCat);
+    if (!cats.length) return 0;
+    let drawn = 0, i = 0;
+    while (drawn < count) {
+      let addedAny = false;
+      for (const c of cats) {
+        if (drawn >= count) break;
+        const w = byCat[c][i];
+        if (w && !taken.has(w.id)) {
+          batch.push(w); taken.add(w.id); drawn++; addedAny = true;
+        }
       }
+      if (!addedAny) break;
+      i++;
     }
-    if (!addedAny) break;
-    i++;
+    return drawn;
   }
-  return batch;
+
+  // 목표 비율대로 먼저 뽑고, 특정 난이도의 재고가 부족하면 남은 난이도에서 채웁니다.
+  let shortfall = 0;
+  [1, 2, 3].forEach(level => { shortfall += quota[level] - drawFrom(level, quota[level]); });
+  if (shortfall > 0) {
+    for (const level of [2, 1, 3]) {
+      if (shortfall <= 0) break;
+      shortfall -= drawFrom(level, shortfall);
+    }
+  }
+
+  return shuffle(batch);
 }
 
 function logReviewCompletion(count) {
@@ -250,6 +305,11 @@ function renderExamples(word) {
 }
 function renderTip(word) {
   return word.tip ? `<div class="tip"><strong>활용 팁</strong> ${escapeHtml(word.tip)}</div>` : '';
+}
+function difficultyBadge(word) {
+  const d = word.difficulty || 2;
+  const label = d === 1 ? '기초' : d === 3 ? '고급' : '중급';
+  return `<span class="diff-badge d${d}">${label}</span>`;
 }
 function renderWordRelations(word) {
   const parts = [];
@@ -590,6 +650,7 @@ function learnCardBodyHtml(word) {
     <div class="review-meta">
       <span class="cat-badge">${escapeHtml(categoryLabel(word.category))}</span>
       <span class="type-badge">${word.type === 'phrase' ? '관용구/표현' : '단어'}</span>
+      ${difficultyBadge(word)}
     </div>
     <div class="swipe-area" id="learn-swipe-area">
       <div class="flashcard">
@@ -870,6 +931,7 @@ function renderReviewCard() {
     <div class="review-meta">
       <span class="cat-badge">${escapeHtml(categoryLabel(word.category))}</span>
       <span class="type-badge">${word.type === 'phrase' ? '관용구/표현' : '단어'}</span>
+      ${difficultyBadge(word)}
       <span class="progress-text">${progress}</span>
     </div>
     ${modeSelectorHtml}
