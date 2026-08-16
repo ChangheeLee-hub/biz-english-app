@@ -34,7 +34,12 @@ body {
   font-family: -apple-system, "Segoe UI", "Noto Sans KR", Pretendard, sans-serif;
   background: var(--bg);
   color: var(--text);
+  /* 버튼을 빠르게 두 번 눌렀을 때 화면이 확대되지 않도록 더블탭 줌만 끕니다
+     (손가락 두 개로 벌리는 핀치 줌은 그대로 동작합니다). */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
 }
+button, .btn { touch-action: manipulation; }
 
 .app-shell {
   max-width: 720px;
@@ -171,6 +176,19 @@ body {
 .card-nav .muted { text-align: center; font-size: 12px; flex: 1; }
 .nav-btn { font-size: 16px; padding: 8px 14px; flex: 0 0 auto; }
 .key-hint { text-align: center; margin-top: 10px; font-size: 11px; }
+
+/* 손가락으로 누르기 쉬운 큰 넘기기 버튼 */
+.card-nav.big { gap: 10px; margin: 14px 0 0; }
+.card-nav.big .nav-btn {
+  flex: 1 1 0;
+  min-height: 56px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.card-nav.big .nav-btn.primary {
+  background: var(--primary); border-color: var(--primary); color: #fff;
+}
+.swipe-area { touch-action: pan-y; }
 .type-badge {
   background: rgba(16,185,129,0.12);
   color: var(--accent);
@@ -328,6 +346,37 @@ body {
 .day-word-list { margin: 0 0 12px; padding-left: 18px; font-size: 13px; color: var(--muted); }
 .day-word-list li { margin-bottom: 4px; }
 .day-word-list strong { color: var(--text); }
+
+/* Day 1, Day 2 ... 다시보기 버튼 */
+.day-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.day-chip {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 10px 16px; min-width: 78px; font-weight: 600; font-size: 14px;
+}
+.day-chip small { color: var(--muted); font-weight: 400; font-size: 11px; }
+
+/* 새단어 학습: 카드 / 전체목록 전환 툴바 */
+.learn-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 12px;
+}
+.learn-toolbar .btn { padding: 8px 12px; font-size: 13px; flex: 0 0 auto; }
+
+/* 새단어 학습: 전체 목록 모드 */
+.learn-list { display: flex; flex-direction: column; gap: 10px; }
+.learn-list-item {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.lli-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lli-index {
+  background: var(--primary); color: #fff; font-size: 11px; font-weight: 700;
+  min-width: 22px; height: 22px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.lli-ipa { margin-top: 0; font-size: 12px; }
+.lli-meaning { font-size: 15px; margin: 8px 0 10px; }
+.learn-list-item .example { background: var(--bg); }
 
 /* 학습 캘린더 */
 .cal-header {
