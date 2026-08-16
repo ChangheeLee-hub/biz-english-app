@@ -230,6 +230,20 @@ button, .btn { touch-action: manipulation; }
 }
 .swipe-area { touch-action: pan-y; }
 
+/* 카드 영역을 항상 같은 높이로 고정합니다. 단어마다 예문·팁 길이가 달라도
+   페이지 전체 높이가 변하지 않으므로, 아래 고정 버튼이 흔들릴 여지가 없습니다.
+   내용이 길면 카드 안에서만 스크롤됩니다. */
+.card-viewport {
+  height: 45vh;                      /* dvh 미지원 브라우저 대비 */
+  height: calc(100dvh - 415px);
+  min-height: 200px;
+  max-height: 560px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.card-viewport .flashcard { min-height: 100%; }
+
 /* 카드 길이와 무관하게 항상 화면 하단 같은 자리에 고정되는 넘기기 버튼 */
 .card-nav.fixed-bottom {
   position: fixed;
