@@ -41,6 +41,10 @@ body {
 }
 button, .btn { touch-action: manipulation; }
 
+/* iOS Safari는 글자 크기가 16px 미만인 입력창을 탭하면 화면을 자동으로 확대합니다.
+   모든 입력 요소를 16px 이상으로 맞춰 이 자동 확대를 원천 차단합니다. */
+input, select, textarea, button { font-size: 16px; }
+
 .app-shell {
   max-width: 720px;
   margin: 0 auto;
@@ -242,10 +246,17 @@ button, .btn { touch-action: manipulation; }
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
+/* 복습 화면은 하단 고정 바에 평가 칸이 더 얹히므로 카드 영역을 그만큼 줄입니다. */
+.card-viewport.compact {
+  height: 36vh;
+  height: calc(100dvh - 500px);
+  min-height: 170px;
+}
 .card-viewport .flashcard { min-height: 100%; }
 
 /* 카드 길이와 무관하게 항상 화면 하단 같은 자리에 고정되는 넘기기 버튼 */
-.card-nav.fixed-bottom {
+.card-nav.fixed-bottom,
+.bottom-bar.fixed-bottom {
   position: fixed;
   left: 0; right: 0; bottom: 0;
   z-index: 50;
@@ -256,8 +267,16 @@ button, .btn { touch-action: manipulation; }
   padding: 10px calc(16px + env(safe-area-inset-right))
            calc(10px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
 }
+/* 복습 화면: 평가 칸 + 이동 버튼을 한 덩어리로 하단 고정 */
+.bottom-bar.fixed-bottom .rating-row { margin-top: 0; }
+.bottom-bar.fixed-bottom .card-nav.big { margin-top: 8px; }
+/* 답을 확인하기 전에도 평가 칸의 자리는 그대로 남겨 두어(숨기기만 함)
+   버튼들이 위아래로 움직이지 않게 합니다. */
+.rating-row.is-hidden { visibility: hidden; }
+
 /* 고정 버튼에 본문 마지막 부분이 가려지지 않도록 확보하는 여백 */
 .nav-spacer { height: 92px; }
+.nav-spacer.tall { height: 158px; }
 .type-badge {
   background: rgba(16,185,129,0.12);
   color: var(--accent);
@@ -297,8 +316,9 @@ button, .btn { touch-action: manipulation; }
 .tip { font-size: 13px; margin-top: 10px; background: rgba(245,158,11,0.1); padding: 10px 12px; border-radius: 8px; }
 .tip strong { color: var(--warn); margin-right: 4px; }
 
-.rating-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
-.rating-row .btn { padding: 10px 4px; font-size: 13px; }
+.rating-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; }
+.rating-row .btn { padding: 10px 4px; font-size: 15px; font-weight: 600; min-height: 52px; }
+.rating-row .btn small { font-size: 11px; font-weight: 400; }
 .rate.again { border-color: var(--danger); color: var(--danger); }
 .rate.hard { border-color: var(--warn); color: var(--warn); }
 .rate.good { border-color: var(--primary); color: var(--primary); }
@@ -317,7 +337,7 @@ button, .btn { touch-action: manipulation; }
   border: 1px solid var(--border);
   background: var(--card-bg);
   color: var(--text);
-  font-size: 13px;
+  font-size: 16px;
 }
 .browse-list { display: flex; flex-direction: column; gap: 8px; }
 .browse-item {
@@ -341,7 +361,7 @@ button, .btn { touch-action: manipulation; }
   border: 1px solid var(--border);
   background: var(--card-bg);
   color: var(--text);
-  font-size: 14px;
+  font-size: 16px;
   font-family: inherit;
 }
 .add-form textarea { min-height: 54px; resize: vertical; }
@@ -357,7 +377,7 @@ button, .btn { touch-action: manipulation; }
 .core-tag { margin-left: auto; font-size: 11px; color: var(--muted); }
 .cat-manage-row .icon-btn.danger { margin-left: auto; font-size: 12px; }
 .cat-form { display: flex; gap: 8px; }
-.cat-form input { flex: 1; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text); }
+.cat-form input { flex: 1; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text); font-size: 16px; }
 
 /* Stats */
 .bar-chart { display: flex; align-items: flex-end; gap: 10px; height: 130px; padding: 10px 4px; }
@@ -381,7 +401,7 @@ button, .btn { touch-action: manipulation; }
 .mode-row label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
 .mode-row select {
   padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--card-bg); color: var(--text); font-size: 12px;
+  background: var(--card-bg); color: var(--text); font-size: 16px;
 }
 
 /* 회상(한→영) 연습 모드 */
@@ -395,7 +415,7 @@ button, .btn { touch-action: manipulation; }
 .recall-form { display: flex; gap: 8px; margin-top: 18px; }
 .recall-form input {
   flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--bg); color: var(--text); font-size: 15px;
+  background: var(--bg); color: var(--text); font-size: 16px; /* 16px 미만이면 iOS가 확대함 */
 }
 .recall-result { margin-top: 16px; font-weight: 600; font-size: 15px; }
 .recall-result.correct { color: var(--accent); }
