@@ -3,6 +3,7 @@
 const STORAGE_KEY = 'bizEnglishApp_v1';
 const INTERVALS_DAYS = [1, 3, 7, 14, 30, 60, 120]; // 망각곡선 기반 복습 주기 (박스 인덱스별)
 const DAILY_BATCH_SIZE = 20; // "N일차 학습"에서 하루에 도입하는 신규 단어 수
+const REVIEW_BATCH_SIZE = 20; // 하루에 복습할 최대 단어 수 (누적 부담을 막기 위한 상한)
 
 let state = null;
 
@@ -190,6 +191,35 @@ function dueWords() {
   return state.words.filter(w => w.studyDay !== null && w.srs.dueDate <= today);
 }
 
+function daysOverdue(dueDate) {
+  const diff = new Date(todayISO()) - new Date(dueDate);
+  return Math.max(0, Math.round(diff / 86400000));
+}
+
+// 복습 우선순위: 오래 밀린 단어 > 아직 약한 단어(낮은 박스) > 어려운 단어 순으로 높게 잡습니다.
+// "다시/어려움"을 눌렀던 단어는 박스가 낮게 유지되므로 자연스럽게 앞쪽으로 올라옵니다.
+function reviewPriority(w) {
+  const overdue = daysOverdue(w.srs.dueDate);
+  const weakness = (INTERVALS_DAYS.length - w.srs.box); // 박스가 낮을수록 큼
+  const hardness = (w.difficulty || 2);
+  return overdue * 3 + weakness * 2 + hardness;
+}
+
+function reviewedTodayCount() {
+  const entry = state.reviewLog.find(e => e.date === todayISO());
+  return entry ? entry.count : 0;
+}
+
+// 오늘 아직 남은 복습 할당량만큼만, 우선순위가 높은 단어부터 뽑아옵니다.
+function todaysReviewBatch(extra) {
+  const quota = extra || Math.max(0, REVIEW_BATCH_SIZE - reviewedTodayCount());
+  if (quota <= 0) return [];
+  return dueWords()
+    .slice()
+    .sort((a, b) => reviewPriority(b) - reviewPriority(a))
+    .slice(0, quota);
+}
+
 function unintroducedWords() {
   return state.words.filter(w => w.studyDay === null);
 }
@@ -355,6 +385,8 @@ function renderDashboard() {
     return { cat, total, dueCount, newCount };
   });
 
+  const todayQuota = todaysReviewBatch().length;
+
   el.innerHTML = `
     <div class="card-grid">
       <div class="stat-card">
@@ -362,8 +394,8 @@ function renderDashboard() {
         <div class="stat-label">전체 단어/표현</div>
       </div>
       <div class="stat-card highlight">
-        <div class="stat-num">${due.length}</div>
-        <div class="stat-label">오늘 복습할 항목</div>
+        <div class="stat-num">${todayQuota}</div>
+        <div class="stat-label">오늘 복습 ${due.length > todayQuota ? `(대기 ${due.length}개)` : ''}</div>
       </div>
       <div class="stat-card">
         <div class="stat-num">${unintroduced.length}</div>
@@ -387,11 +419,12 @@ function renderDashboard() {
           ? `이어서 학습하기 (${state.learnSession.index}/${(state.studyDayLog.find(e => e.day === state.learnSession.day) || { wordIds: [] }).wordIds.length})`
           : `${nextStudyDayNumber()}일차 새단어 학습`
       }</button>
-      <button class="btn" id="btn-start-review" ${due.length === 0 ? 'disabled' : ''}>
-        복습 시작하기 (${due.length})
+      <button class="btn" id="btn-start-review" ${todayQuota === 0 ? 'disabled' : ''}>
+        복습 시작하기 (${todayQuota})
       </button>
       <button class="btn" id="btn-goto-add">새 단어/표현 추가</button>
     </div>
+    ${todayQuota === 0 && due.length > 0 ? `<p class="muted">오늘 몫의 복습(${REVIEW_BATCH_SIZE}개)을 마쳤어요. 남은 ${due.length}개는 내일 이어서 하시면 됩니다.</p>` : ''}
     ${due.length === 0 && unintroduced.length > 0 ? '<p class="muted">아직 복습할 항목이 없어요. 먼저 위 버튼으로 오늘의 새단어 학습을 시작해보세요.</p>' : ''}
     ${due.length === 0 && unintroduced.length === 0 ? '<p class="muted">모든 단어를 학습했어요! 새 단어를 추가해보세요.</p>' : ''}
   `;
@@ -808,8 +841,8 @@ let reviewRevealed = false;
 let recallChecked = false;
 let recallCorrect = false;
 
-function renderReview() {
-  reviewQueue = shuffle(dueWords());
+function renderReview(extraQuota) {
+  reviewQueue = shuffle(todaysReviewBatch(extraQuota));
   reviewIndex = 0;
   reviewSessionCount = 0;
   lastRenderedIndex = -1;
@@ -837,11 +870,20 @@ function pickDirection() {
 function renderReviewCard() {
   const el = document.getElementById('panel-review');
 
+  const stillDue = dueWords().length;
+
   if (reviewQueue.length === 0) {
+    const doneToday = reviewedTodayCount();
     el.innerHTML = `<div class="empty-state">
-      <p>오늘 복습할 항목이 없습니다.</p>
-      <button class="btn" id="btn-review-back">대시보드로 돌아가기</button>
+      ${doneToday >= REVIEW_BATCH_SIZE
+        ? `<p class="celebrate">오늘 몫의 복습을 끝냈어요! 🎉</p>
+           <p class="muted">오늘 ${doneToday}개를 복습했습니다.${stillDue ? ` 남은 ${stillDue}개는 내일 이어서 하시면 됩니다.` : ''}</p>`
+        : `<p>오늘 복습할 항목이 없습니다.</p>`}
+      ${stillDue > 0 ? `<button class="btn" id="btn-review-more">그래도 ${Math.min(REVIEW_BATCH_SIZE, stillDue)}개 더 하기</button>` : ''}
+      <button class="btn primary" id="btn-review-back">대시보드로 돌아가기</button>
     </div>`;
+    const moreBtn = document.getElementById('btn-review-more');
+    if (moreBtn) moreBtn.addEventListener('click', () => renderReview(Math.min(REVIEW_BATCH_SIZE, stillDue)));
     document.getElementById('btn-review-back').addEventListener('click', () => switchTab('dashboard'));
     return;
   }
@@ -849,9 +891,12 @@ function renderReviewCard() {
   if (reviewIndex >= reviewQueue.length) {
     el.innerHTML = `<div class="empty-state">
       <p class="celebrate">오늘의 복습을 모두 마쳤어요! 🎉</p>
-      <p class="muted">이번 세션에서 ${reviewSessionCount}개 항목을 복습했습니다.</p>
+      <p class="muted">이번 세션에서 ${reviewSessionCount}개 항목을 복습했습니다.${stillDue ? ` 남은 ${stillDue}개는 내일 이어서 하시면 됩니다.` : ''}</p>
+      ${stillDue > 0 ? `<button class="btn" id="btn-review-more">그래도 ${Math.min(REVIEW_BATCH_SIZE, stillDue)}개 더 하기</button>` : ''}
       <button class="btn primary" id="btn-review-done">대시보드로</button>
     </div>`;
+    const moreBtn = document.getElementById('btn-review-more');
+    if (moreBtn) moreBtn.addEventListener('click', () => renderReview(Math.min(REVIEW_BATCH_SIZE, stillDue)));
     document.getElementById('btn-review-done').addEventListener('click', () => switchTab('dashboard'));
     return;
   }
@@ -935,7 +980,7 @@ function renderReviewCard() {
       <span class="progress-text">${progress}</span>
     </div>
     ${modeSelectorHtml}
-    <div class="card-viewport">
+    <div class="card-viewport compact">
       <div class="swipe-area" id="review-swipe-area">
         <div class="flashcard">
           ${cardBodyHtml}
@@ -943,20 +988,21 @@ function renderReviewCard() {
       </div>
     </div>
 
-    ${showRating ? `
-      <div class="rating-row">
-        <button class="btn rate again" data-rating="again">다시<br><small>1일 후</small></button>
+    <div class="nav-spacer tall"></div>
+
+    <!-- 평가 칸과 이동 버튼을 하나의 고정 바에 함께 넣습니다.
+         평가 칸은 아직 답을 확인하기 전에도 자리를 차지하도록 유지해(visibility만 숨김)
+         화면이 위아래로 흔들리지 않게 했습니다. -->
+    <div class="bottom-bar fixed-bottom">
+      <div class="rating-row${showRating ? '' : ' is-hidden'}">
         <button class="btn rate hard" data-rating="hard">어려움<br><small>짧게</small></button>
         <button class="btn rate good" data-rating="good">좋음<br><small>표준 주기</small></button>
         <button class="btn rate easy" data-rating="easy">쉬움<br><small>길게</small></button>
       </div>
-      <p class="muted key-hint">키보드: ← → 카드 이동 · 1~4 평가</p>
-    ` : `<p class="muted key-hint">키보드: ← → 카드 이동${currentDirection === 'recognition' ? ' · Space/Enter 뜻 보기' : ''}</p>`}
-
-    <div class="nav-spacer"></div>
-    <div class="card-nav big fixed-bottom">
-      <button class="btn nav-btn" id="btn-prev-card" ${reviewIndex === 0 ? 'disabled' : ''} title="이전 카드">◀ 이전</button>
-      <button class="btn nav-btn" id="btn-next-card" title="다음 카드 (평가 없이 건너뛰기)">건너뛰기 ▶</button>
+      <div class="card-nav big">
+        <button class="btn nav-btn" id="btn-prev-card" ${reviewIndex === 0 ? 'disabled' : ''} title="이전 카드">◀ 이전</button>
+        <button class="btn nav-btn" id="btn-next-card" title="다음 카드 (평가 없이 건너뛰기)">건너뛰기 ▶</button>
+      </div>
     </div>
   `;
 
@@ -1040,9 +1086,9 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft') { e.preventDefault(); navigateCard(-1); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); navigateCard(1); }
   else if ((e.key === ' ' || e.key === 'Enter') && currentDirection === 'recognition' && !reviewRevealed) { e.preventDefault(); revealCurrentCard(); }
-  else if (['1', '2', '3', '4'].includes(e.key)) {
+  else if (['1', '2', '3'].includes(e.key)) {
     const showRating = (currentDirection === 'recall' && recallChecked) || (currentDirection === 'recognition' && reviewRevealed);
-    if (showRating) { e.preventDefault(); rateCurrentCard(['again', 'hard', 'good', 'easy'][Number(e.key) - 1]); }
+    if (showRating) { e.preventDefault(); rateCurrentCard(['hard', 'good', 'easy'][Number(e.key) - 1]); }
   }
 });
 
